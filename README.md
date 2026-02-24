@@ -128,7 +128,7 @@ The standard single-run reported both models at identical accuracy. mlci correct
 
 ## Running the Examples
 
-Five ready-to-run example scripts are included in the `examples/` folder. All use datasets that ship with scikit-learn — no downloads needed.
+Seven ready-to-run example scripts are included in the `examples/` folder. All use datasets that ship with scikit-learn — no downloads needed.
 
 ---
 
@@ -226,6 +226,64 @@ python examples/torch_example.py
 - `torch_training_curves.png` — loss curves for all three architectures
 
 **Key feature — caching:** each (seed, split) training run is hashed by architecture + config + data and saved to disk. Kill the process halfway through 50 runs, rerun the script, and it continues from where it left off. Essential when training takes minutes per run.
+
+---
+
+### `mde_example.py` — minimum detectable effect calculator
+
+Answers a question that comes up before every experiment: *"How many seeds do I actually need?"* Uses a short pilot run to estimate the score variance of your model, then works backwards from a target effect size and power level to give you a concrete seed budget — or, given a fixed budget, tells you the smallest effect you can reliably detect.
+
+```bash
+python examples/mde_example.py
+# Runtime: ~30 seconds
+```
+
+**What it demonstrates:**
+
+- **Pilot-based σ estimation** (`estimate_sigma`) — runs 5 seeds to measure how much accuracy varies due to random initialisation alone, without any assumption about the distribution.
+- **Seeds-to-detect query** (`mde_n_seeds`) — given a target effect (e.g. 0.5% accuracy difference) and a target power (e.g. 80%), returns the minimum number of seeds required.
+- **MDE-from-budget query** (`mde_effect`) — given a fixed seed budget (e.g. 20 seeds), returns the minimum effect size you can detect at the specified power level.
+- **Power reference table** (`quick_summary`) — prints a grid of power values across a range of effect sizes and seed counts so you can reason about the tradeoff at a glance.
+- **Power curve and heatmap** (`plot_power_curve`, `plot_power_heatmap`) — visualises how power grows with more seeds, for multiple effect sizes simultaneously.
+- **Verification run** — actually runs 20 seeds, compares two models with the corrected t-test, and checks whether the observed effect falls above or below the computed MDE. Confirms the power estimate is consistent with real experimental outcomes.
+
+All power calculations are built directly on the Nadeau-Bengio corrected t-test — the same test used by `compare()` — so the estimates are internally consistent with the rest of the library.
+
+**Plots produced** (saved to `examples/mde_plots/`):
+- `power_curves.png` — power vs number of seeds for multiple effect sizes, with 80% target line
+- `power_heatmap.png` — effect size × seed count grid coloured by power
+
+---
+
+### `calibration_example.py` — calibration analysis across seeds
+
+Answers a different question: *"When my model says 80% confidence, does that actually mean 80%?"* sklearn's `calibration_curve` gives you a single reliability diagram from one run. This example uses mlci to run the same calibration analysis across many seeds and folds, producing uncertainty bands on the reliability diagram itself — so you can see whether calibration is genuinely stable or just lucky on a particular random split.
+
+```bash
+python examples/calibration_example.py
+# Runtime: ~30 seconds
+```
+
+**What it demonstrates:**
+
+- **`CalibrationExperiment`** — runs calibration measurement across `n_seeds × n_splits` and aggregates ECE, MCE, and per-bin reliability statistics with proper uncertainty quantification.
+- **ECE and MCE with confidence intervals** — Expected Calibration Error and Maximum Calibration Error reported as distributions across seeds, not single numbers. The `.summary()` method prints the mean, 95% CI, and seed-level standard deviation for both.
+- **Reliability diagrams with uncertainty bands** (`plot_reliability_diagram`) — the standard "confidence vs accuracy" plot, but with a 95% CI band around the mean curve and optional faint overlay of every individual seed run. Shows at a glance how much the calibration curve moves between seeds.
+- **ECE distribution plots** (`plot_ece_distribution`) — KDE of the ECE values across seeds, one per model. A narrow distribution means calibration is consistent; a wide one means you got lucky (or unlucky) on a specific split.
+- **Multi-model comparison** (`plot_calibration_comparison`) — plots all models' reliability diagrams side-by-side with CI bands for direct comparison.
+- **Reliability overlay** (`plot_reliability_overlay`) — overlays all models' mean reliability curves on a single axis, making it easy to see which model is best-calibrated across the confidence range.
+
+Three models are compared on the breast cancer dataset: RandomForest (tends to be overconfident at high probabilities), GradientBoosting (better calibrated but still biased), and LogisticRegression (typically the best-calibrated of the three on tabular data).
+
+**Plots produced** (saved to `examples/calibration_plots/`):
+- `reliability_randomforest.png` — reliability diagram with 95% CI band for RandomForest
+- `reliability_gradientboosting.png` — same for GradientBoosting
+- `reliability_logisticregression.png` — same for LogisticRegression
+- `ece_dist_randomforest.png` — ECE distribution across seeds for RandomForest
+- `ece_dist_gradientboosting.png` — same for GradientBoosting
+- `ece_dist_logisticregression.png` — same for LogisticRegression
+- `calibration_comparison.png` — all three reliability diagrams side-by-side with CI bands
+- `reliability_overlay.png` — all three mean curves on a single axis
 
 ---
 
@@ -626,7 +684,116 @@ Without multiple testing correction, comparing 3 models on 4 datasets means 12 p
 
 ---
 
-### 8. Visualisation
+### 9. Minimum Detectable Effect (MDE) Calculator
+
+Before running an experiment, use the MDE calculator to determine how many seeds you need — or what the smallest detectable effect is given a fixed seed budget.
+
+```python
+from mlci.stats.power import estimate_sigma, mde_n_seeds, mde_effect, quick_summary
+
+# Step 1: estimate score variance from a small pilot run
+pilot = Experiment(
+    model_factory=lambda seed: RandomForestClassifier(random_state=seed),
+    X=X, y=y, metric="accuracy", n_seeds=5, n_splits=5,
+).run(verbose=False)
+
+sigma = estimate_sigma(pilot)
+
+# Step 2a: how many seeds to detect a 0.5% difference at 80% power?
+result = mde_n_seeds(effect_size=0.005, sigma=sigma, n_splits=5, alpha=0.05, target_power=0.80)
+print(result)
+# → Need 28 seeds to detect a 0.5% effect at 80% power (α=0.05)
+
+# Step 2b: with a budget of 20 seeds, what's the smallest detectable effect?
+mde = mde_effect(n_seeds=20, sigma=sigma, n_splits=5, alpha=0.05, target_power=0.80)
+print(mde)
+# → With 20 seeds: MDE = 0.572%  (80% power, α=0.05)
+```
+
+Print a power reference table across a range of effects and seed counts:
+
+```python
+quick_summary(
+    sigma=sigma, n_splits=5, alpha=0.05,
+    effects=[0.001, 0.002, 0.005, 0.010, 0.020],
+    n_seeds_options=[5, 10, 20, 30, 50],
+)
+```
+
+Generate power curves and a heatmap:
+
+```python
+from mlci.stats.power import power_analysis, plot_power_curve, plot_power_heatmap
+import numpy as np
+
+curve = power_analysis(
+    effects=np.linspace(0.001, 0.015, 8),
+    n_seeds_range=list(range(5, 60, 5)),
+    sigma=sigma, n_splits=5, alpha=0.05,
+)
+fig = plot_power_curve(curve, target_power=0.80, highlight_effects=[0.005, 0.010])
+fig = plot_power_heatmap(curve, target_power=0.80)
+```
+
+All calculations use the Nadeau-Bengio corrected t-test variance formula — the same test used by `compare()` — so power estimates are directly consistent with your actual experimental outcomes.
+
+---
+
+### 10. Calibration Analysis
+
+Measure whether your model's predicted probabilities are reliable, and quantify how stable calibration is across seeds — something sklearn's `calibration_curve` cannot tell you.
+
+```python
+from mlci.calibration import CalibrationExperiment
+
+cal = CalibrationExperiment(
+    model_factory=lambda seed: RandomForestClassifier(n_estimators=100, random_state=seed),
+    X=X, y=y,
+    n_seeds=15, n_splits=5,
+    n_bins=10, strategy="uniform",
+    model_name="RandomForest",
+)
+result = cal.run()
+print(result.summary())
+```
+```
+────────────────────────────────────────────────────────────
+  Calibration: RandomForest  (accuracy)
+  Seeds: 15   Splits: 5   Bins: 10
+────────────────────────────────────────────────────────────
+  ECE  mean : 0.0431   95% CI: [0.0389, 0.0472]   σ=0.0042
+  MCE  mean : 0.1203   95% CI: [0.1089, 0.1318]   σ=0.0113
+────────────────────────────────────────────────────────────
+```
+
+Plot a reliability diagram with uncertainty bands across seeds:
+
+```python
+from mlci.calibration import (
+    plot_reliability_diagram,
+    plot_ece_distribution,
+    plot_calibration_comparison,
+    plot_reliability_overlay,
+)
+
+# Single model: reliability diagram with 95% CI band + individual seed runs
+fig = plot_reliability_diagram(result, confidence=0.95, show_individual_runs=True)
+
+# ECE distribution across seeds
+fig = plot_ece_distribution(result)
+
+# Compare multiple models side-by-side
+fig = plot_calibration_comparison([rf_cal, gb_cal, lr_cal], confidence=0.95)
+
+# Overlay mean curves for all models on a single axis
+fig = plot_reliability_overlay([rf_cal, gb_cal, lr_cal])
+```
+
+The key difference from sklearn: `calibration_curve` gives a single curve from one run. mlci gives you a 95% CI band on that curve across seeds, so you know whether your model is genuinely well-calibrated or whether the result depends heavily on which random split happened to be used.
+
+---
+
+### 11. Visualisation
 
 ```python
 from mlci.viz.plots import (
@@ -727,6 +894,8 @@ Please also cite the underlying statistical method the library is built on:
 - [x] PyTorch integration with caching and early stopping
 - [x] Multi-dataset benchmarking with Benjamini-Hochberg correction
 - [x] PyMC-based full Bayesian hierarchical comparison
+- [x] Minimum Detectable Effect (MDE) calculator with power curves and heatmaps
+- [x] Calibration analysis with ECE/MCE confidence intervals and reliability diagrams
 - [ ] Full PyTorch/HuggingFace training loop integration with Slurm support
 - [ ] HTML report generation
 - [ ] Integration with MLflow / Weights & Biases
