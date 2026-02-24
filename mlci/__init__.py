@@ -21,6 +21,39 @@ from mlci.sensitivity.hyperparameter import hyperparameter_sensitivity
 from mlci.sensitivity.dataset import dataset_sensitivity
 from mlci.sensitivity.learning_curve import learning_curve
 
+# Power analysis / MDE calculator
+from mlci.stats.power import (
+    mde_n_seeds,
+    mde_effect,
+    power_analysis,
+    estimate_sigma,
+    quick_summary as power_quick_summary,
+    plot_power_curve,
+    plot_power_heatmap,
+    SampleSizeResult,
+    MDEResult,
+    PowerCurveResult,
+)
+
+# Calibration analysis
+from mlci.calibration.experiment import (
+    CalibrationExperiment,
+)
+
+from mlci.calibration.plots import (
+    plot_reliability_diagram,
+    plot_ece_distribution,
+    plot_calibration_comparison,
+    plot_reliability_overlay,
+)
+
+from mlci.calibration.ece import (
+    CalibrationResults,
+    compute_ece,
+    compute_mce,
+    reliability_curve,
+)
+
 __version__ = "0.1.0"
 __all__ = [
     # Core
@@ -36,4 +69,13 @@ __all__ = [
     "load_all_classification", "load_all_regression",
     # Sensitivity
     "hyperparameter_sensitivity", "dataset_sensitivity", "learning_curve",
+    # Power analysis / MDE
+    "mde_n_seeds", "mde_effect", "power_analysis", "estimate_sigma",
+    "power_quick_summary", "plot_power_curve", "plot_power_heatmap",
+    "SampleSizeResult", "MDEResult", "PowerCurveResult",
+    # Calibration
+    "CalibrationExperiment", "CalibrationResults",
+    "compute_ece", "compute_mce", "reliability_curve",
+    "plot_reliability_diagram", "plot_ece_distribution",
+    "plot_calibration_comparison", "plot_reliability_overlay",
 ]
