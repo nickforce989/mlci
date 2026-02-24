@@ -6,6 +6,12 @@ Every number you report from an ML experiment is a random variable. This library
 
 ---
 
+## Author
+Niccolò Forzano --- [github.com/nickforce989](https://github.com/nickforce989) · [nic.forz@gmail.com](mailto:nic.forz@gmail.com)
+
+
+---
+
 ## Installation
 
 ```bash
@@ -535,11 +541,6 @@ Results are stored as plain JSON — no pickle, no version lock-in. Share result
 
 ---
 
-## Author
-Niccolò Forzano --- [github.com/nickforce989](https://github.com/nickforce989) · [nic.forz@gmail.com](mailto:nic.forz@gmail.com)
-
----
-
 ## Citation
 
 If you use mlci in published work, please cite it:
@@ -596,4 +597,4 @@ Please also cite the underlying statistical method the library is built on:
 
 ## License
 
-MIT
+GPL
