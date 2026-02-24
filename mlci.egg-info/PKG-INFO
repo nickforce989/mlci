@@ -11,6 +11,7 @@ Classifier: License :: OSI Approved :: MIT License
 Classifier: Programming Language :: Python :: 3
 Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
 Requires-Python: >=3.9
+License-File: LICENSE.txt
 Requires-Dist: numpy>=1.23
 Requires-Dist: scipy>=1.9
 Requires-Dist: scikit-learn>=1.1
@@ -33,6 +34,7 @@ Dynamic: author
 Dynamic: author-email
 Dynamic: classifier
 Dynamic: home-page
+Dynamic: license-file
 Dynamic: provides-extra
 Dynamic: requires-dist
 Dynamic: requires-python

@@ -1,3 +1,4 @@
+LICENSE.txt
 README.md
 setup.py
 mlci/__init__.py
@@ -21,6 +22,7 @@ mlci/sensitivity/hyperparameter.py
 mlci/sensitivity/learning_curve.py
 mlci/stats/__init__.py
 mlci/stats/anova.py
+mlci/stats/bayesian_hierarchical.py
 mlci/stats/bootstrap.py
 mlci/stats/tests.py
 mlci/viz/__init__.py

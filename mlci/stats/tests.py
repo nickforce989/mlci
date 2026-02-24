@@ -389,16 +389,21 @@ def compare(
     results_a, results_b : ExperimentResults
     method : str
         One of:
-          - "corrected_ttest"  (default) — Nadeau & Bengio corrected t-test
-          - "wilcoxon"         — non-parametric paired Wilcoxon test
-          - "bayesian"         — Bayesian posterior comparison
-          - "all"              — run all three and print all results
+          - "corrected_ttest"        (default) — Nadeau & Bengio corrected t-test
+          - "wilcoxon"               — non-parametric paired Wilcoxon test
+          - "bayesian"               — fast analytic Bayesian posterior comparison
+          - "bayesian_hierarchical"  — full PyMC hierarchical model; accepts extra
+                                       kwargs: rope, hdi_prob, draws, tune, chains,
+                                       target_accept, random_seed, progressbar,
+                                       plot, plot_path.
+                                       Requires: pip install mlci[bayesian]
+          - "all"                    — run all four and print all results
     alpha : float
-        Significance threshold (ignored for bayesian).
+        Significance threshold (ignored for bayesian / bayesian_hierarchical).
 
     Returns
     -------
-    ComparisonResult (or prints all three if method="all")
+    ComparisonResult, BayesianHierarchicalResult, or dict if method="all"
     """
 
     methods = {
@@ -407,16 +412,39 @@ def compare(
         "bayesian":        bayesian_comparison,
     }
 
+    if method == "bayesian_hierarchical":
+        from mlci.stats.bayesian_hierarchical import bayesian_hierarchical_compare
+        result = bayesian_hierarchical_compare(results_a, results_b, **kwargs)
+        print(result)
+        return result
+
     if method == "all":
         results = {}
         for name, fn in methods.items():
             r = fn(results_a, results_b, **kwargs) if name != "bayesian" else fn(results_a, results_b)
             print(r)
             results[name] = r
+
+        print("\n── Bayesian Hierarchical (PyMC) ──")
+        try:
+            from mlci.stats.bayesian_hierarchical import bayesian_hierarchical_compare
+            bh_result = bayesian_hierarchical_compare(
+                results_a, results_b,
+                rope=kwargs.get("rope", 0.005),
+                progressbar=kwargs.get("progressbar", True),
+            )
+            print(bh_result)
+            results["bayesian_hierarchical"] = bh_result
+        except ImportError:
+            print("  [skipped] Install mlci[bayesian] for full hierarchical comparison.")
+
         return results
 
     if method not in methods:
-        raise ValueError(f"Unknown method '{method}'. Choose from {list(methods)} or 'all'.")
+        raise ValueError(
+            f"Unknown method '{method}'. "
+            f"Choose from {list(methods) + ['bayesian_hierarchical', 'all']}."
+        )
 
     fn = methods[method]
     if method == "bayesian":

@@ -13,19 +13,20 @@ Niccolò Forzano --- [github.com/nickforce989](https://github.com/nickforce989) 
 ---
 
 ## Installation
+Starting from the ```mlci``` root directory:
 
 ```bash
-pip install mlci
+pip install .
 ```
 
 For PyTorch integration:
 ```bash
-pip install mlci torch
+pip install . torch
 ```
 
 For Bayesian comparison with full PyMC backend:
 ```bash
-pip install mlci[bayesian]
+pip install ".[bayesian]"
 ```
 
 ### Requirements
@@ -40,7 +41,7 @@ pip install mlci[bayesian]
 - joblib >= 1.2
 - tqdm >= 4.64
 
-All dependencies are installed automatically with `pip install mlci`. To install manually:
+All dependencies are installed automatically with `pip install .`. To install manually:
 
 ```bash
 pip install numpy scipy scikit-learn matplotlib seaborn pandas joblib tqdm
@@ -294,7 +295,145 @@ Uses a two-way balanced ANOVA decomposition. High split variance means your eval
 
 ---
 
-### 4. Sensitivity Analysis
+### 4. Full Bayesian Hierarchical Comparison (PyMC)
+
+The existing `method="bayesian"` comparison in `compare()` estimates P(A > B)
+analytically from the bootstrap distribution of the mean difference.  It is
+fast and requires no extra dependencies, but it does not model the *structure*
+of the (n_seeds × n_splits) score matrix.  Folds within a seed share training
+data and are not independent, which means a flat normal approximation slightly
+overstates certainty.
+
+The full Bayesian hierarchical comparison uses PyMC to build a proper two-level
+random-effects model:
+
+```
+diff[s, k]  ~  Normal(μ_s,        σ_within)   # observed per-(seed, split) diff
+μ_s         ~  Normal(μ_global,   σ_between)   # per-seed random effect
+μ_global    ~  Normal(0, 0.10)                 # global mean difference (prior)
+σ_within    ~  HalfNormal(0.05)               # within-seed (fold) variance
+σ_between   ~  HalfNormal(0.05)               # between-seed variance
+```
+
+where `diff[s, k] = score_A[s, k] − score_B[s, k]` and the random effect `μ_s`
+absorbs the correlation among folds that share the same random seed.
+Inference on `μ_global` is therefore correctly calibrated.
+
+#### Installation
+
+```bash
+pip install ".[bayesian]"
+# installs: pymc>=5.0, arviz>=0.16
+```
+
+#### Usage
+
+```python
+from mlci.stats.bayesian_hierarchical import bayesian_hierarchical_compare
+
+result = bayesian_hierarchical_compare(
+    rf_results, gb_results,
+    rope=0.005,        # differences < 0.5 pp are practically irrelevant
+    hdi_prob=0.94,     # 94% HDI following Kruschke/McElreath conventions
+    draws=2000,
+    tune=1000,
+    chains=4,
+    plot=True,         # saves posterior + trace plots
+    plot_path="examples/plots/",
+)
+print(result)
+```
+
+Or via the unified `compare()` dispatcher:
+
+```python
+from mlci.stats.tests import compare
+
+compare(rf_results, gb_results, method="bayesian_hierarchical", rope=0.005)
+```
+
+#### Example output
+
+```
+────────────────────────────────────────────────────────────────────
+  Bayesian Hierarchical Comparison (PyMC)
+────────────────────────────────────────────────────────────────────
+  A  :  RandomForest
+  B  :  GradientBoosting
+  Metric    : accuracy
+────────────────────────────────────────────────────────────────────
+  μ(A−B)    : +0.0004  [94% HDI: -0.0022, +0.0031]
+  P(A > B)  : 0.613
+  ROPE      : [-0.0050, +0.0050]
+  In ROPE   : 87.4% of posterior
+────────────────────────────────────────────────────────────────────
+  Decision  : Inconclusive — HDI overlaps the ROPE.
+               Collect more data or relax the ROPE threshold.
+────────────────────────────────────────────────────────────────────
+```
+
+#### Interpreting the output
+
+| Field | Meaning |
+|---|---|
+| `μ(A−B)` | Posterior mean of the expected performance gap, in metric units |
+| `94% HDI` | Highest Density Interval: the narrowest interval containing 94% of posterior probability |
+| `P(A > B)` | Probability that model A has higher true performance than model B |
+| `ROPE` | Region Of Practical Equivalence — differences smaller than this are treated as irrelevant |
+| `In ROPE` | Fraction of the posterior inside the ROPE |
+
+#### Decision rules (Kruschke 2018)
+
+| Condition | Decision |
+|---|---|
+| 94% HDI lies entirely **inside** the ROPE | Models are **practically equivalent** |
+| 94% HDI lies entirely **above** the ROPE | Model A is **practically better** |
+| 94% HDI lies entirely **below** the ROPE | Model B is **practically better** |
+| HDI **overlaps** the ROPE | **Inconclusive** — collect more data |
+
+#### ROPE guidance
+
+The ROPE should be set in the same units as your metric. Reasonable defaults:
+
+| Metric | Suggested ROPE |
+|---|---|
+| accuracy / F1 / ROC-AUC | `rope=0.005` (±0.5 pp) |
+| RMSE / MAE | dataset-dependent; use ~1% of the target range |
+| R² | `rope=0.01` |
+
+You can also pass a custom interval directly:
+
+```python
+bayesian_hierarchical_compare(a, b, rope=(-0.01, 0.01))
+```
+
+#### Plots
+
+When `plot=True`, two figures are saved / displayed:
+
+- **`bayesian_posterior.png`** — posterior distribution of `μ_global` with the
+  HDI interval, a vertical line at 0, and the ROPE shaded in red.
+- **`bayesian_trace.png`** — MCMC trace and rank plots for `μ_global`,
+  `σ_within`, and `σ_between`; useful for diagnosing sampler pathologies.
+
+#### Why hierarchical?
+
+A flat model (e.g. a t-test on the per-split differences) treats all `n_seeds × n_splits`
+observations as independent.  They are not — the `n_splits` fold scores within a
+single seed share the same model initialisation and the same train/test split
+boundaries.  The random effect `μ_s` captures this within-seed dependency
+explicitly, so the posterior width for `μ_global` reflects the *effective*
+number of independent observations (closer to `n_seeds` than to
+`n_seeds × n_splits`).
+
+This is especially important when `n_splits` is large relative to `n_seeds`:
+without the random effect, the model would incorrectly pool all fold scores as
+independent evidence, artificially narrowing the posterior and overstating
+certainty about the performance gap.
+
+
+
+### 5. Sensitivity Analysis
 
 #### Learning curves with uncertainty bands
 
@@ -361,7 +500,7 @@ Tracks per-sample misclassification rates across all (seed, split) pairs. Sample
 
 ---
 
-### 5. sklearn Integrations
+### 6. sklearn Integrations
 
 #### PipelineFactory
 
@@ -419,7 +558,7 @@ all_results = grid.run()
 
 ---
 
-### 6. PyTorch Integration
+### 7. PyTorch Integration
 
 Wrap any `nn.Module` in a sklearn-compatible interface with caching:
 
@@ -463,7 +602,7 @@ summary(results)
 
 ---
 
-### 7. Multi-Dataset Benchmarking
+### 8. Multi-Dataset Benchmarking
 
 Run a model grid across multiple datasets with Benjamini-Hochberg multiple testing correction:
 
@@ -587,8 +726,8 @@ Please also cite the underlying statistical method the library is built on:
 - [x] sklearn integrations (PipelineFactory, ModelGrid, wrap_cross_val_scores)
 - [x] PyTorch integration with caching and early stopping
 - [x] Multi-dataset benchmarking with Benjamini-Hochberg correction
+- [x] PyMC-based full Bayesian hierarchical comparison
 - [ ] Full PyTorch/HuggingFace training loop integration with Slurm support
-- [ ] PyMC-based full Bayesian hierarchical comparison
 - [ ] HTML report generation
 - [ ] Integration with MLflow / Weights & Biases
 - [ ] Support for multi-class and multi-label metrics
