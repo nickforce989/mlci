@@ -1,0 +1,39 @@
+Metadata-Version: 2.4
+Name: mlci
+Version: 0.1.0
+Summary: Statistically rigorous ML model evaluation and benchmarking
+Home-page: https://github.com/nickforce989/mlci
+Author: Niccolò Forzano
+Author-email: nic.forz@gmail.com
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3
+Classifier: Topic :: Scientific/Engineering :: Artificial Intelligence
+Requires-Python: >=3.9
+Requires-Dist: numpy>=1.23
+Requires-Dist: scipy>=1.9
+Requires-Dist: scikit-learn>=1.1
+Requires-Dist: matplotlib>=3.5
+Requires-Dist: seaborn>=0.12
+Requires-Dist: pandas>=1.5
+Requires-Dist: joblib>=1.2
+Requires-Dist: tqdm>=4.64
+Provides-Extra: bayesian
+Requires-Dist: pymc>=5.0; extra == "bayesian"
+Requires-Dist: arviz>=0.15; extra == "bayesian"
+Provides-Extra: torch
+Requires-Dist: torch>=1.13; extra == "torch"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0; extra == "dev"
+Requires-Dist: pytest-cov; extra == "dev"
+Requires-Dist: black; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
